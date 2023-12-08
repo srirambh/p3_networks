@@ -5,9 +5,10 @@ import sys
 from collections import defaultdict
 
 def receiveRes(sock):
+    header = None
     try:
-        data = sock.recvfrom(10000)[0]
-        header = struct.unpack_from(f"!cI4sH4sH", data)
+        rec = sock.recvfrom(10000)[0]
+        header = struct.unpack_from(f"!cI4sH4sH", rec)
         return header
     except:
         return header
