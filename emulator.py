@@ -39,9 +39,11 @@ def forwardpacket(pack, src_ip, src_port, soc):
     t = struct.unpack_from("!c", pack, offset = 0)
     if(t[0] == b'L'):
         header = struct.unpack_from("!c4sHIII", pack)
-        payload = [(lambda x: (x[:4], int.from_bytes(x[4:], "big")))(struct.unpack_from(f"!8s", pack, offset = (idx * 8) + 19)[0])  for idx in range(header[4])]
+        payload = [(lambda x: (x[:4], int.from_bytes(x[4:], 
+                    "big")))(struct.unpack_from(f"!8s",
+                    pack, offset = (idx * 8) + 19)[0])  for idx in range(header[4])]
         
-        if(header[4]==0):
+        if(header[4] == 0):
             return
         pack = encapstate(header[1], header[2], header[3], header[4]-1, payload)
         for n in TOP[(src_ip, src_port)]:
