@@ -16,9 +16,9 @@ def receiveRes(sock):
 
 def printPacketInfo(srcIP, srcPort, destIP, destPort, ttl):
     print("TTL: ", ttl)
-    print("Source IP: ", socket.inet_ntoa(srcIP))
+    print("Source IP: ", srcIP)
     print("Source Port: ", srcPort)
-    print("Dest IP: ", socket.inet_ntoa(destIP))
+    print("Dest IP: ", destIP)
     print("Dest Port: ", destPort)
     print("=====================")
 
@@ -48,7 +48,7 @@ if __name__ == "__main__":
         sock.sendto(packet, (socket.inet_ntoa(srcIP), int(args.source_port)))
         if(int(args.debug_option) == 1):
             print("=====Sent Packet====")
-            printPacketInfo(srcIP, int(args.source_port), destIP, int(args.destination_port), ttl)
+            printPacketInfo(socket.inet_ntoa(srcIP), int(args.source_port), socket.inet_ntoa(destIP), int(args.destination_port), ttl)
             
         res = receiveRes(sock)
         if(not res):
