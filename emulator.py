@@ -46,8 +46,9 @@ def forwardpacket(pack, src_ip, src_port, soc):
             if((header[4], header[5]) in ROUTE):
                 nextHop = ROUTE[(header[4], header[5])]
                 soc.sendto(struct.pack(f"!cI4sH4sH", b'T', header[1]-1, 
-                                       header[2], header[3], header[4], header[5])
-, (socket.inet_ntoa(nextHop[0]), nextHop[1]))
+                                       header[2], header[3], header[4], header[5]), 
+                                       (socket.inet_ntoa(nextHop[0]), nextHop[1]))
+                print("sent!")
             else:
                 print("next hop not found")
     elif(t[0] == b'L'):
@@ -147,11 +148,11 @@ def buildForwardTable(src_ip, src_port):
                 traversed.add(n)
                 ROUTE[n] = ROUTE[node]
     ROUTE[(src_ip, src_port)] = None
-    print(f"ROUTING FOR NODE ({src_ip}, {src_port})")
-    for k,v in ROUTE.items():
+    print(f"ROUTING FOR NODE ({socket.inet_ntoa(src_ip)}, {src_port})")
+    for k, v in ROUTE.items():
         print(k, f"nextHop: {v}")
-    print(f"TOPOLOGY FOR NODE ({src_ip}, {src_port})")
-    for k,v in TOP.items():
+    print(f"TOPOLOGY FOR NODE ({socket.inet_ntoa(src_ip)}, {src_port})")
+    for k, v in TOP.items():
         print(k, f"Adjacent Nodes {v}")
     
 
