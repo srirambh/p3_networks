@@ -7,12 +7,16 @@ from datetime import datetime, timedelta
 import errno
 import socket
 import struct
+
 H = dict()
 ROUTE = defaultdict(lambda: (b'', 0))
 SEQ_NO = defaultdict(int)
 TOP = defaultdict(list)
+
+
 def encapstate(src_ip, src_port, seq_no, ttl, payload):
-    return struct.pack("!c4sHIII" + ("8s" *len(payload)), b'L', src_ip, src_port, seq_no, len(payload), ttl, *[i[0] + i[1].to_bytes(4, 'big') for i in payload])
+    return struct.pack("!c4sHIII" + ("8s" *len(payload)), b'L', src_ip, 
+                       src_port, seq_no, len(payload), ttl, *[i[0] + i[1].to_bytes(4, 'big') for i in payload])
 
 async def sendhello(src_ip, src_port, soc):
     global TOP
@@ -26,7 +30,8 @@ async def sendstate(src_ip, src_port, soc):
     while True:
         for idx in TOP[(src_ip, int(src_port))]:
             SEQ_NO[(src_ip, src_port)] += 1
-            soc.sendto(encapstate(src_ip, src_port, SEQ_NO[(src_ip, src_port)], 25, TOP[(src_ip, src_port)]), (socket.inet_ntoa(idx[0]), idx[1]))
+            soc.sendto(encapstate(src_ip, src_port, SEQ_NO[(src_ip, src_port)], 25, TOP[(src_ip, src_port)]), 
+                       (socket.inet_ntoa(idx[0]), idx[1]))
         await asyncio.sleep(.3)
 
 def forwardpacket(pack, src_ip, src_port, soc):
@@ -35,17 +40,20 @@ def forwardpacket(pack, src_ip, src_port, soc):
     if (t[0] != b'H'):
         header = struct.unpack_from(f"!BI4sH4sH", pack)
         if(header[1] == 0):            
-            soc.sendto(struct.pack(f"!cI4sH4sH", b'T', 0, src_ip, src_port, header[4], header[5]), (socket.inet_ntoa(header[2]), header[3]))
+            soc.sendto(struct.pack(f"!cI4sH4sH", b'T', 0, src_ip, src_port, header[4], 
+                                   header[5]), (socket.inet_ntoa(header[2]), header[3]))
         else:
             if((header[4], header[5]) in ROUTE):
                 nextHop = ROUTE[(header[4], header[5])]
-                soc.sendto(struct.pack(f"!cI4sH4sH", b'T', header[1]-1, header[2], header[3], header[4], header[5])
+                soc.sendto(struct.pack(f"!cI4sH4sH", b'T', header[1]-1, 
+                                       header[2], header[3], header[4], header[5])
 , (socket.inet_ntoa(nextHop[0]), nextHop[1]))
             else:
                 print("next hop not found")
     elif(t[0] == b'L'):
         header = struct.unpack_from("!c4sHIII", pack)
-        payload = [(lambda x: (x[:4], int.from_bytes(x[4:], "big")))(struct.unpack_from(f"!8s", pack, offset = (idx * 8) + 19)[0])  for idx in range(header[4])]
+        payload = [(lambda x: (x[:4], int.from_bytes(x[4:], "big")))
+                   (struct.unpack_from(f"!8s", pack, offset = (idx * 8) + 19)[0])  for idx in range(header[4])]
         
         if(header[4]==0):
             return
@@ -68,7 +76,8 @@ async def recvcheck(src_ip, src_port, soc):
             x = struct.unpack_from("!c", data, offset=0)
             if(x[0] == b'L'):
                 header = struct.unpack_from("!c4sHIII", data)
-                payload = [(lambda x: (x[:4], int.from_bytes(x[4:], "big")))(struct.unpack_from(f"!8s", data, offset = (idx * 8) + 19)[0])  for idx in range(header[4])]
+                payload = [(lambda x: (x[:4], int.from_bytes(x[4:], "big")))
+                           (struct.unpack_from(f"!8s", data, offset = (idx * 8) + 19)[0])  for idx in range(header[4])]
                 if(header[3] > SEQ_NO[(header[1], header[2])] and not payload == TOP[(header[1], int(header[2]))]):
                     SEQ_NO[(header[1], header[2])] = header[3]
                     TOP[(header[1], header[2])] = payload
@@ -77,12 +86,13 @@ async def recvcheck(src_ip, src_port, soc):
             elif(x[0] == b'H'):
                 pack = struct.unpack_from("!c4sH", data)
                 if((pack[1], pack[2]) not in H):
-                    H[(pack[1], pack[2])] = datetime.now()
                     TOP[(src_ip, src_port)] = TOP[(src_ip, src_port)]  + [(pack[1], pack[2])]
+                    H[(pack[1], pack[2])] = datetime.now()
                     buildForwardTable(src_ip, src_port)
                     SEQ_NO[(src_ip, src_port)] += 1
                     for k in TOP[(src_ip, src_port)]:
-                        soc.sendto(encapstate(src_ip, src_port, SEQ_NO[(src_ip, src_port)], 25, TOP[(src_ip, src_port)]), (socket.inet_ntoa(k[0]), k[1]))
+                        soc.sendto(encapstate(src_ip, src_port, SEQ_NO[(src_ip, src_port)], 
+                                              25, TOP[(src_ip, src_port)]), (socket.inet_ntoa(k[0]), k[1]))
                 for idx in H.keys():
                     if(pack[1] == idx[0] and pack[2] == idx[1]):
                         H[idx] = datetime.now()
@@ -100,7 +110,8 @@ async def recvcheck(src_ip, src_port, soc):
                 buildForwardTable(src_ip, src_port)
                 SEQ_NO[(src_ip, src_port)] += 1
                 for k in TOP[(src_ip, src_port)]:
-                    soc.sendto(encapstate(src_ip, src_port, SEQ_NO[(src_ip, src_port)], 25, TOP[(src_ip, src_port)]), (socket.inet_ntoa(k[0]), k[1]))
+                    soc.sendto(encapstate(src_ip, src_port, SEQ_NO[(src_ip, src_port)], 
+                                          25, TOP[(src_ip, src_port)]), (socket.inet_ntoa(k[0]), k[1]))
         for idx in exp:
             H.pop(idx)      
         await asyncio.sleep(0)
@@ -111,7 +122,9 @@ def readtopology(fn, src_ip, src_port):
     TOP = defaultdict(list)
     with open(fn, "r") as f:
         for r in csv.reader(f, delimiter=' '):
-            TOP[(socket.inet_aton((r[0].split(","))[0]), int((r[0].split(","))[1]))] = list(map(lambda x: (socket.inet_aton(x.split(",")[0]), int(x.split(",")[1]) ),  r[1:]))
+            TOP[(socket.inet_aton((r[0].split(","))[0]), 
+                 int((r[0].split(","))[1]))] = list(map(lambda x: (socket.inet_aton(x.split(",")[0]), 
+                                                                   int(x.split(",")[1]) ),  r[1:]))
     buildForwardTable(src_ip, src_port)
     H = dict()
     for idx in TOP[(src_ip, src_port)]:
@@ -158,9 +171,9 @@ if __name__ == "__main__":
     p.add_argument("-p", "--port", help="Input port")
     p.add_argument("-f", "--filename", help="Input file name")
     args = p.parse_args()
-    address = socket.inet_aton(socket.gethostbyname(socket.gethostname()))
     soc = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     soc.bind((socket.gethostname(), int(args.port)))
     soc.setblocking(False)
+    address = socket.inet_aton(socket.gethostbyname(socket.gethostname()))
     readtopology(args.filename, address, int(args.port))
     createroutes(address, int(args.port), soc)
