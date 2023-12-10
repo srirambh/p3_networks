@@ -69,7 +69,7 @@ async def recvcheck(src_ip, src_port, soc):
             if(x[0] == b'L'):
                 header = struct.unpack_from("!c4sHIII", data)
                 payload = [(lambda x: (x[:4], int.from_bytes(x[4:], "big")))(struct.unpack_from(f"!8s", data, offset = (idx * 8) + 19)[0])  for idx in range(header[4])]
-                if(header[3] > SEQ_NO[(header[1], header[2])] and not payload == TOP[(header[1],int(header[2]))]):
+                if(header[3] > SEQ_NO[(header[1], header[2])] and not payload == TOP[(header[1], int(header[2]))]):
                     SEQ_NO[(header[1], header[2])] = header[3]
                     TOP[(header[1], header[2])] = payload
                     forwardpacket(data, src_ip, src_port, soc)
@@ -111,7 +111,7 @@ def readtopology(fn, src_ip, src_port):
     TOP = defaultdict(list)
     with open(fn, "r") as f:
         for r in csv.reader(f, delimiter=' '):
-            TOP[(socket.inet_aton((r[0].split(","))[0]),int((r[0].split(","))[1]))] = list(map(lambda x: (socket.inet_aton(x.split(",")[0]), int(x.split(",")[1]) ),  r[1:]))
+            TOP[(socket.inet_aton((r[0].split(","))[0]), int((r[0].split(","))[1]))] = list(map(lambda x: (socket.inet_aton(x.split(",")[0]), int(x.split(",")[1]) ),  r[1:]))
     buildForwardTable(src_ip, src_port)
     H = dict()
     for idx in TOP[(src_ip, src_port)]:
