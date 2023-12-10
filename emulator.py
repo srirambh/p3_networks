@@ -155,8 +155,8 @@ def createroutes(src_ip, src_port, soc):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("-p", "--port")
-    p.add_argument("-f", "--filename")
+    p.add_argument("-p", "--port", help="Input port")
+    p.add_argument("-f", "--filename", help="Input file name")
     args = p.parse_args()
     address = socket.inet_aton(socket.gethostbyname(socket.gethostname()))
     soc = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
