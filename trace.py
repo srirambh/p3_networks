@@ -37,9 +37,10 @@ if __name__ == "__main__":
     sock.bind((socket.gethostname(), int(args.routetrace_port)))
     sock.settimeout(5) 
 
+    selfIP = socket.inet_aton(socket.gethostbyname(socket.gethostname()))
     srcIP = socket.inet_aton(socket.gethostbyname(args.source_hostname))
     destIP = socket.inet_aton(socket.gethostbyname(args.destination_hostname))
-    selfIP = socket.inet_aton(socket.gethostbyname(socket.gethostname()))
+    
     
     ttl = 0
     path = []
