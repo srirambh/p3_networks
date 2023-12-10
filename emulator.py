@@ -50,7 +50,7 @@ def forwardpacket(pack, src_ip, src_port, soc):
                                        (socket.inet_ntoa(nextHop[0]), nextHop[1]))
                 print("sent!")
             else:
-                print("next hop not found")
+                print("unable to find next hop.")
     elif(t[0] == b'L'):
         header = struct.unpack_from("!c4sHIII", pack)
         payload = [(lambda x: (x[:4], int.from_bytes(x[4:], "big")))
