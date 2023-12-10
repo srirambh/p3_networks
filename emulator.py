@@ -32,7 +32,16 @@ async def sendstate(src_ip, src_port, soc):
 def forwardpacket(pack, src_ip, src_port, soc):
     global TOP, ROUTE
     t = struct.unpack_from("!c", pack, offset = 0)
-    if (t[0] != b'H'):
+    if(t[0] == b'L'):
+        header = struct.unpack_from("!c4sHIII", pack)
+        payload = [(lambda x: (x[:4], int.from_bytes(x[4:], "big")))(struct.unpack_from(f"!8s", pack, offset = (idx * 8) + 19)[0])  for idx in range(header[4])]
+        
+        if(header[4]==0):
+            return
+        pack = encapstate(header[1], header[2], header[3], header[4]-1, payload)
+        for n in TOP[(src_ip, src_port)]:
+            soc.sendto(pack, (socket.inet_ntoa(n[0]), n[1]))
+    elif (t[0] != b'H'):
         header = struct.unpack_from(f"!BI4sH4sH", pack)
         if(header[1] == 0):            
             soc.sendto(struct.pack(f"!cI4sH4sH", b'T', 0, src_ip, src_port, header[4], header[5]), (socket.inet_ntoa(header[2]), header[3]))
@@ -43,15 +52,7 @@ def forwardpacket(pack, src_ip, src_port, soc):
 , (socket.inet_ntoa(nextHop[0]), nextHop[1]))
             else:
                 print("next hop not found")
-    elif(t[0] == b'L'):
-        header = struct.unpack_from("!c4sHIII", pack)
-        payload = [(lambda x: (x[:4], int.from_bytes(x[4:], "big")))(struct.unpack_from(f"!8s", pack, offset = (idx * 8) + 19)[0])  for idx in range(header[4])]
-        
-        if(header[4]==0):
-            return
-        pack = encapstate(header[1], header[2], header[3], header[4]-1, payload)
-        for n in TOP[(src_ip, src_port)]:
-            soc.sendto(pack, (socket.inet_ntoa(n[0]), n[1]))
+    
     
 
 async def recvcheck(src_ip, src_port, soc):
