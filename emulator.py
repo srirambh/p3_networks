@@ -10,19 +10,19 @@ import struct
 
 H = dict()
 ROUTE = defaultdict(lambda: (b'', 0))
-SEQ_NO = defaultdict(int)
+SEQ_NUM = defaultdict(int)
 TOP = defaultdict(list)
 
-def encapstate(src_ip, src_port, seq_no, ttl, payload):
+def encapstate(src_ip, src_port, seq_no, payload, ttl):
     return struct.pack("!c4sHIII" + ("8s" *len(payload)), b'L', src_ip, 
                        src_port, seq_no, len(payload), ttl, *[i[0] + i[1].to_bytes(4, 'big') for i in payload])
 
 async def sendstate(soc, src_port, src_ip):
-    global SEQ_NO
+    global SEQ_NUM
     while True:
         for idx in TOP[(src_ip, int(src_port))]:
-            SEQ_NO[(src_ip, src_port)] += 1
-            soc.sendto(encapstate(src_ip, src_port, SEQ_NO[(src_ip, src_port)], 25, TOP[(src_ip, src_port)]), 
+            SEQ_NUM[(src_ip, src_port)] += 1
+            soc.sendto(encapstate(src_ip, src_port, SEQ_NUM[(src_ip, src_port)], TOP[(src_ip, src_port)], 25)
                        (socket.inet_ntoa(idx[0]), idx[1]))
         await asyncio.sleep(.3)
 
@@ -42,17 +42,15 @@ def forwardpacket(pack, src_ip, src_port, soc):
                     "big")))(struct.unpack_from(f"!8s",
                     pack, offset = (idx * 8) + 19)[0])  for idx in range(header[4])]
         
-        if(header[4] == 0):
+        if(header[4] != 0):
+            pack = encapstate(header[1], header[2], header[3], payload, header[4]-1)
+            for n in TOP[(src_ip, src_port)]:
+                soc.sendto(pack, (socket.inet_ntoa(n[0]), n[1]))
+        else:
             return
-        pack = encapstate(header[1], header[2], header[3], header[4]-1, payload)
-        for n in TOP[(src_ip, src_port)]:
-            soc.sendto(pack, (socket.inet_ntoa(n[0]), n[1]))
     elif (a[0] != b'H'):
         header = struct.unpack_from(f"!BI4sH4sH", pack)
-        if(header[1] == 0):            
-            soc.sendto(struct.pack(f"!cI4sH4sH", b'T', 0, src_ip, src_port, header[4], 
-                                   header[5]), (socket.inet_ntoa(header[2]), header[3]))
-        else:
+        if (header[1] != 0):
             if((header[4], header[5]) in ROUTE):
                 nextHop = ROUTE[(header[4], header[5])]
                 soc.sendto(struct.pack(f"!cI4sH4sH", b'T', header[1]-1, 
@@ -61,10 +59,13 @@ def forwardpacket(pack, src_ip, src_port, soc):
                 print("sent!")
             else:
                 print("unable to find next hop")
+        else:
+            soc.sendto(struct.pack(f"!cI4sH4sH", b'T', 0, src_ip, src_port, header[4], 
+                                   header[5]), (socket.inet_ntoa(header[2]), header[3]))
     
 
 async def recvcheck(soc, src_port, src_ip):
-    global TOP, SEQ_NO, H
+    global TOP, SEQ_NUM, H
     while True:
         data = None
         try:
@@ -79,9 +80,9 @@ async def recvcheck(soc, src_port, src_ip):
                 head = struct.unpack_from("!c4sHIII", data)
                 pay = [(lambda x: (x[:4], int.from_bytes(x[4:], "big")))
                            (struct.unpack_from(f"!8s", data, offset = (idx * 8) + 19)[0])  for idx in range(head[4])]
-                if(pay != TOP[(head[1], int(head[2]))] and head[3] > SEQ_NO[(head[1], head[2])]):
+                if(pay != TOP[(head[1], int(head[2]))] and head[3] > SEQ_NUM[(head[1], head[2])]):
                     TOP[(head[1], head[2])] = pay
-                    SEQ_NO[(head[1], head[2])] = head[3]
+                    SEQ_NUM[(head[1], head[2])] = head[3]
                     forwardpacket(data, src_ip, src_port, soc)
                     buildForwardTable(src_ip, src_port)
             elif(x[0] == b'H'):
@@ -90,10 +91,10 @@ async def recvcheck(soc, src_port, src_ip):
                     TOP[(src_ip, src_port)] = TOP[(src_ip, src_port)]  + [(pack[1], pack[2])]
                     H[(pack[1], pack[2])] = datetime.now()
                     buildForwardTable(src_ip, src_port)
-                    SEQ_NO[(src_ip, src_port)] += 1
+                    SEQ_NUM[(src_ip, src_port)] += 1
                     for k in TOP[(src_ip, src_port)]:
-                        soc.sendto(encapstate(src_ip, src_port, SEQ_NO[(src_ip, src_port)], 
-                                              25, TOP[(src_ip, src_port)]), (socket.inet_ntoa(k[0]), k[1]))
+                        soc.sendto(encapstate(src_ip, src_port, SEQ_NUM[(src_ip, src_port)], 
+                                              TOP[(src_ip, src_port)], 25), (socket.inet_ntoa(k[0]), k[1]))
                 for idx in H.keys():
                     if(pack[2] == idx[1] and pack[1] == idx[0]):
                         H[idx] = datetime.now()
@@ -109,10 +110,10 @@ async def recvcheck(soc, src_port, src_ip):
                 TOP[(src_ip, src_port)] = temp
                 exp.append(idx)
                 buildForwardTable(src_ip, src_port)
-                SEQ_NO[(src_ip, src_port)] += 1
+                SEQ_NUM[(src_ip, src_port)] += 1
                 for k in TOP[(src_ip, src_port)]:
-                    soc.sendto(encapstate(src_ip, src_port, SEQ_NO[(src_ip, src_port)], 
-                                          25, TOP[(src_ip, src_port)]), (socket.inet_ntoa(k[0]), k[1]))
+                    soc.sendto(encapstate(src_ip, src_port, SEQ_NUM[(src_ip, src_port)], 
+                                          TOP[(src_ip, src_port)], 25), (socket.inet_ntoa(k[0]), k[1]))
         for idx in exp:
             H.pop(idx)      
         await asyncio.sleep(0)
@@ -162,6 +163,9 @@ def buildForwardTable(src_ip, src_port):
         print(f"{socket.inet_ntoa(k[0])}" + ":" f"{k[1]}", f"\tAdjacent nodes: {format}")
     
 
+def createroutes(soc, src_port, src_ip):
+    asyncio.run(createrouteshelper(soc, src_port, src_ip))
+
 async def createrouteshelper(soc, src_port, src_ip):
     t1 = asyncio.create_task(recvcheck(soc, src_port, src_ip))
     t2 = asyncio.create_task(sendhello(soc, src_port, src_ip))
@@ -169,9 +173,6 @@ async def createrouteshelper(soc, src_port, src_ip):
     await t1
     await t2
     await t3
-
-def createroutes(soc, src_port, src_ip):
-    asyncio.run(createrouteshelper(soc, src_port, src_ip))
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
