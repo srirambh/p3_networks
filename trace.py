@@ -63,8 +63,9 @@ if __name__ == "__main__":
 
         if(res[2] == destIP and res[3] == int(args.destination_port)):
             print("Destination reached")
+            print("Hop #\tIP:Port")
             for i in range(len(path)):
-                print(f"Hop {i+1} IP {path[i][0]} Port {path[i][1]}")
+                print(f"{i+1} \t{path[i][0]}:{path[i][1]}")
             break
         else:
             ttl += 1
