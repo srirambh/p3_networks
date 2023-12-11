@@ -13,19 +13,11 @@ ROUTE = defaultdict(lambda: (b'', 0))
 SEQ_NO = defaultdict(int)
 TOP = defaultdict(list)
 
-
 def encapstate(src_ip, src_port, seq_no, ttl, payload):
     return struct.pack("!c4sHIII" + ("8s" *len(payload)), b'L', src_ip, 
                        src_port, seq_no, len(payload), ttl, *[i[0] + i[1].to_bytes(4, 'big') for i in payload])
 
-async def sendhello(src_ip, src_port, soc):
-    global TOP
-    while True:
-        for idx in TOP[(src_ip, int(src_port))]:
-            soc.sendto(struct.pack("!c4sH", b'H', src_ip, src_port), (socket.inet_ntoa(idx[0]), idx[1]))
-        await asyncio.sleep(.3)
-    
-async def sendstate(src_ip, src_port, soc):
+async def sendstate(soc, src_port, src_ip):
     global SEQ_NO
     while True:
         for idx in TOP[(src_ip, int(src_port))]:
@@ -34,10 +26,17 @@ async def sendstate(src_ip, src_port, soc):
                        (socket.inet_ntoa(idx[0]), idx[1]))
         await asyncio.sleep(.3)
 
+async def sendhello(soc, src_port, src_ip):
+    global TOP
+    while True:
+        for idx in TOP[(src_ip, int(src_port))]:
+            soc.sendto(struct.pack("!c4sH", b'H', src_ip, src_port), (socket.inet_ntoa(idx[0]), idx[1]))
+        await asyncio.sleep(.3)
+
 def forwardpacket(pack, src_ip, src_port, soc):
-    global TOP, ROUTE
-    t = struct.unpack_from("!c", pack, offset = 0)
-    if(t[0] == b'L'):
+    #global TOP, ROUTE
+    a = struct.unpack_from("!c", pack, offset = 0)
+    if(a[0] == b'L'):
         header = struct.unpack_from("!c4sHIII", pack)
         payload = [(lambda x: (x[:4], int.from_bytes(x[4:], 
                     "big")))(struct.unpack_from(f"!8s",
@@ -48,7 +47,7 @@ def forwardpacket(pack, src_ip, src_port, soc):
         pack = encapstate(header[1], header[2], header[3], header[4]-1, payload)
         for n in TOP[(src_ip, src_port)]:
             soc.sendto(pack, (socket.inet_ntoa(n[0]), n[1]))
-    elif (t[0] != b'H'):
+    elif (a[0] != b'H'):
         header = struct.unpack_from(f"!BI4sH4sH", pack)
         if(header[1] == 0):            
             soc.sendto(struct.pack(f"!cI4sH4sH", b'T', 0, src_ip, src_port, header[4], 
@@ -61,11 +60,10 @@ def forwardpacket(pack, src_ip, src_port, soc):
                                        (socket.inet_ntoa(nextHop[0]), nextHop[1]))
                 print("sent!")
             else:
-                print("next hop not found")
-    
+                print("unable to find next hop")
     
 
-async def recvcheck(src_ip, src_port, soc):
+async def recvcheck(soc, src_port, src_ip):
     global TOP, SEQ_NO, H
     while True:
         data = None
@@ -75,15 +73,15 @@ async def recvcheck(src_ip, src_port, soc):
             e = err.args[0] 
             if e != errno.EAGAIN and e != errno.EWOULDBLOCK:
                 print(err)
-        if(data):
+        if(data is not None):
             x = struct.unpack_from("!c", data, offset=0)
             if(x[0] == b'L'):
-                header = struct.unpack_from("!c4sHIII", data)
-                payload = [(lambda x: (x[:4], int.from_bytes(x[4:], "big")))
-                           (struct.unpack_from(f"!8s", data, offset = (idx * 8) + 19)[0])  for idx in range(header[4])]
-                if(header[3] > SEQ_NO[(header[1], header[2])] and not payload == TOP[(header[1], int(header[2]))]):
-                    SEQ_NO[(header[1], header[2])] = header[3]
-                    TOP[(header[1], header[2])] = payload
+                head = struct.unpack_from("!c4sHIII", data)
+                pay = [(lambda x: (x[:4], int.from_bytes(x[4:], "big")))
+                           (struct.unpack_from(f"!8s", data, offset = (idx * 8) + 19)[0])  for idx in range(head[4])]
+                if(pay != TOP[(head[1], int(head[2]))] and head[3] > SEQ_NO[(head[1], head[2])]):
+                    TOP[(head[1], head[2])] = pay
+                    SEQ_NO[(head[1], head[2])] = head[3]
                     forwardpacket(data, src_ip, src_port, soc)
                     buildForwardTable(src_ip, src_port)
             elif(x[0] == b'H'):
@@ -97,7 +95,7 @@ async def recvcheck(src_ip, src_port, soc):
                         soc.sendto(encapstate(src_ip, src_port, SEQ_NO[(src_ip, src_port)], 
                                               25, TOP[(src_ip, src_port)]), (socket.inet_ntoa(k[0]), k[1]))
                 for idx in H.keys():
-                    if(pack[1] == idx[0] and pack[2] == idx[1]):
+                    if(pack[2] == idx[1] and pack[1] == idx[0]):
                         H[idx] = datetime.now()
             else:
                 forwardpacket(data, src_ip, src_port, soc)
@@ -118,7 +116,6 @@ async def recvcheck(src_ip, src_port, soc):
         for idx in exp:
             H.pop(idx)      
         await asyncio.sleep(0)
-
 
 def readtopology(fn, src_ip, src_port):
     global TOP, H
@@ -150,24 +147,31 @@ def buildForwardTable(src_ip, src_port):
                 traversed.add(n)
                 ROUTE[n] = ROUTE[node]
     ROUTE[(src_ip, src_port)] = None
-    print(f"ROUTING FOR NODE ({socket.inet_ntoa(src_ip)}, {src_port})")
+    print("Routing: " + f"{socket.inet_ntoa(src_ip)}" + ":" f"{src_port}")
     for k, v in ROUTE.items():
-        print(k, f"nextHop: {v}")
-    print(f"TOPOLOGY FOR NODE ({socket.inet_ntoa(src_ip)}, {src_port})")
+        if v:
+            print(f"{socket.inet_ntoa(k[0])}" + ":" f"{k[1]}", f"\tNext hop: {socket.inet_ntoa(v[0])}" + ":" f"{v[1]}")
+        else:
+            print(f"{socket.inet_ntoa(k[0])}" + ":" f"{k[1]}", f"\tNext hop: {v}")
+    print("Topology: " + f"{socket.inet_ntoa(src_ip)}" + ":" f"{src_port}")
     for k, v in TOP.items():
-        print(k, f"Adjacent Nodes {v}")
+        temp = [(socket.inet_ntoa(v[i][0]), v[i][1]) for i in range(len(v))]
+        format = list()
+        for x in temp:
+            format.append(x[0] + ":" + str(x[1]))
+        print(f"{socket.inet_ntoa(k[0])}" + ":" f"{k[1]}", f"\tAdjacent nodes: {format}")
     
 
-async def createrouteshelper(src_ip, src_port, soc):
-    t1 = asyncio.create_task(recvcheck(src_ip, src_port, soc))
-    t2 = asyncio.create_task(sendhello(src_ip, src_port, soc))
-    t3 = asyncio.create_task(sendstate(src_ip, src_port, soc))
+async def createrouteshelper(soc, src_port, src_ip):
+    t1 = asyncio.create_task(recvcheck(soc, src_port, src_ip))
+    t2 = asyncio.create_task(sendhello(soc, src_port, src_ip))
+    t3 = asyncio.create_task(sendstate(soc, src_port, src_ip))
     await t1
     await t2
     await t3
 
-def createroutes(src_ip, src_port, soc):
-    asyncio.run(createrouteshelper(src_ip, src_port, soc))
+def createroutes(soc, src_port, src_ip):
+    asyncio.run(createrouteshelper(soc, src_port, src_ip))
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
@@ -179,4 +183,4 @@ if __name__ == "__main__":
     soc.setblocking(False)
     address = socket.inet_aton(socket.gethostbyname(socket.gethostname()))
     readtopology(args.filename, address, int(args.port))
-    createroutes(address, int(args.port), soc)
+    createroutes(soc, int(args.port), address)
